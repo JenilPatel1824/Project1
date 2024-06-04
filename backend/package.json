@@ -15,5 +15,10 @@
   "bugs": {
     "url": "https://github.com/JenilPatel1824/Project1/issues"
   },
-  "homepage": "https://github.com/JenilPatel1824/Project1#readme"
+  "homepage": "https://github.com/JenilPatel1824/Project1#readme",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.588.0",
+    "@aws-sdk/lib-dynamodb": "^3.588.0",
+    "dotenv": "^16.4.5"
+  }
 }
