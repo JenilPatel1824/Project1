@@ -8,7 +8,7 @@ function DynamicForm({ ownerId, formId }) {
     useEffect(() => {
         async function fetchData() {
             try {
-                const response = await axios.get(`/getform/${ownerId}/${formId}`);
+                const response = await axios.get(`http://localhost:3000/getform/${ownerId}/${formId}`);
                 setFormDetails(response.data.form);
                 setFormSpecifications(response.data.formSpecifications);
             } catch (error) {
