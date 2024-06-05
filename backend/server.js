@@ -2,16 +2,23 @@
 
 const express = require('express');
 const bodyParser = require('body-parser');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient,DynamoDB } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const cors = require('cors');
+
 require('dotenv').config(); // Load environment variables from .env file
 
 const app = express();
 
 // Use body-parser to parse JSON bodies into JS objects
 app.use(bodyParser.json());
+
+app.use(cors({
+    origin: 'http://localhost:3001',
+    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+}));
 
 // Configure AWS SDK
 const client = new DynamoDBClient({
@@ -23,6 +30,10 @@ const client = new DynamoDBClient({
 });
 
 const ddbDocClient = DynamoDBDocumentClient.from(client);
+
+const dynamodb = new DynamoDB({ client });
+
+
 
 // Secret key for JWT
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key'; // Use a strong secret in production
@@ -163,8 +174,10 @@ async function saveFormDetails(formId, formData) {
             formEndDate: formData.formEndDate
         }
     };
+    await ddbDocClient.send(new PutCommand(params));
+    console.log("form saved");
 
-    await dynamodb.put(params).promise();
+    // await dynamodb.put(params).promise();
 }
 
 async function saveFormSpecifications(formId, formSpecifications) {
@@ -176,7 +189,10 @@ async function saveFormSpecifications(formId, formSpecifications) {
         }
     };
 
-    await dynamodb.put(params).promise();
+    // await dynamodb.put(params).promise();
+    await ddbDocClient.send(new PutCommand(params));
+    console.log("form spec saved");
+
 }
 function generateUniqueId() {
     // Implement your logic to generate a unique ID here
@@ -184,6 +200,55 @@ function generateUniqueId() {
 }
 
 
+
+app.get('/getform/:ownerId/:formId', async (req, res) => {
+    const ownerId = req.params.ownerId;
+    const formId = req.params.formId;
+
+    try {
+        // Check if the form exists
+        const form = await getFormDetails(ownerId, formId);
+        if (!form) {
+            return res.status(404).json({ error: 'Form not found' });
+        }
+
+        // Retrieve form specifications
+        const formSpecifications = await getFormSpecifications(formId);
+        if (!formSpecifications) {
+            return res.status(500).json({ error: 'Form specifications not found' });
+        }
+
+        res.json({ form, formSpecifications });
+    } catch (error) {
+        console.error('Error retrieving form:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+async function getFormDetails(ownerId, formId) {
+    const params = {
+        TableName: 'Forms',
+        Key: {
+            formId: formId,
+            owner_id: ownerId
+        }
+    };
+
+    const data = await ddbDocClient.send(new GetCommand(params));
+    return data.Item;
+}
+
+async function getFormSpecifications(formId) {
+    const params = {
+        TableName: 'FormSpecifications',
+        Key: {
+            formId: formId
+        }
+    };
+
+    const data = await ddbDocClient.send(new GetCommand(params));
+    return data.Item ? data.Item.specifications : null;
+}
 
 // Start the server
 const PORT = process.env.PORT || 3000;
