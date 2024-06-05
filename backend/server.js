@@ -2,7 +2,7 @@
 
 const express = require('express');
 const bodyParser = require('body-parser');
-const { DynamoDBClient,DynamoDB } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, DynamoDB } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -56,7 +56,7 @@ const authenticateJWT = (req, res, next) => {
 };
 
 // Define a route to fetch data from DynamoDB
-app.get('/data', authenticateJWT, async (req, res) => { // Protect this route with JWT authentication
+app.get('/data', authenticateJWT, async(req, res) => { // Protect this route with JWT authentication
     const params = {
         TableName: 'Owners'
     };
@@ -72,7 +72,7 @@ app.get('/data', authenticateJWT, async (req, res) => { // Protect this route wi
 });
 
 // Define a route to handle signup requests
-app.post('/signup', async (req, res) => {
+app.post('/signup', async(req, res) => {
     const { email, password, business, owner_id } = req.body; // Use body for POST data
 
     if (!email || !password || !business || !owner_id) {
@@ -104,10 +104,12 @@ app.post('/signup', async (req, res) => {
 });
 
 // Define a route to handle login requests using owner_id and password
-app.post('/login', async (req, res) => {
-    const { owner_id, password } = req.body;
+app.post('/login', async(req, res) => {
+    const { email, password } = req.body;
+    console.log(email);
+    console.log(password);
 
-    if (!owner_id || !password) {
+    if (!email || !password) {
         return res.status(400).json({ error: 'Missing required parameters' });
     }
 
@@ -115,7 +117,7 @@ app.post('/login', async (req, res) => {
     const params = {
         TableName: 'Owners',
         Key: {
-            'owner_id': owner_id
+            'email': email
         }
     };
 
@@ -144,56 +146,51 @@ app.post('/login', async (req, res) => {
 });
 
 
-app.post('/create-form', async (req, res) => {
+async function saveFormDetails(formId, ownerId, formName, formType, formEndDate) {
+    const params = {
+        TableName: 'Forms',
+        Item: {
+            formId: formId,
+            owner_id: ownerId,
+            formName: formName,
+            formType: formType,
+            formEndDate: formEndDate
+        }
+    };
+    await ddbDocClient.send(new PutCommand(params));
+    console.log("Form details saved");
+}
+
+async function saveFormSpecifications(formId, specifications) {
+    const params = {
+        TableName: 'FormSpecifications',
+        Item: {
+            formId: formId,
+            specifications: specifications
+        }
+    };
+
+    await ddbDocClient.send(new PutCommand(params));
+    console.log("Form specifications saved");
+}
+
+app.post('/create-form', async(req, res) => {
     try {
-        // Generate a unique form ID
         const formId = generateUniqueId();
+        const { ownerId, formName, formType, formEndDate, specifications } = req.body;
+        console.log(ownerId);
 
-        // Save form details
-        await saveFormDetails(formId, req.body);
+        await saveFormDetails(formId, ownerId, formName, formType, formEndDate);
+        await saveFormSpecifications(formId, specifications);
 
-        // Save form specifications
-        await saveFormSpecifications(formId, req.body.specifications);
-
-        res.status(201).send('Form created successfully');
+        res.status(201).json({ message: 'Form created successfully', formId });
     } catch (error) {
         console.error('Error creating form:', error);
         res.status(500).send('Internal Server Error');
     }
 });
 
-async function saveFormDetails(formId, formData) {
-    const params = {
-        TableName: 'Forms',
-        Item: {
 
-            formId: formId,
-            owner_id: formData.owner_id,
-            formName: formData.formName,
-            formType: formData.formType,
-            formEndDate: formData.formEndDate
-        }
-    };
-    await ddbDocClient.send(new PutCommand(params));
-    console.log("form saved");
-
-    // await dynamodb.put(params).promise();
-}
-
-async function saveFormSpecifications(formId, formSpecifications) {
-    const params = {
-        TableName: 'FormSpecifications',
-        Item: {
-            formId: formId,
-            specifications: formSpecifications
-        }
-    };
-
-    // await dynamodb.put(params).promise();
-    await ddbDocClient.send(new PutCommand(params));
-    console.log("form spec saved");
-
-}
 function generateUniqueId() {
     // Implement your logic to generate a unique ID here
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -201,7 +198,7 @@ function generateUniqueId() {
 
 
 
-app.get('/getform/:ownerId/:formId', async (req, res) => {
+app.get('/getform/:ownerId/:formId', async(req, res) => {
     const ownerId = req.params.ownerId;
     const formId = req.params.formId;
 
@@ -235,6 +232,7 @@ async function getFormDetails(ownerId, formId) {
     };
 
     const data = await ddbDocClient.send(new GetCommand(params));
+    console.log(data);
     return data.Item;
 }
 
@@ -247,6 +245,7 @@ async function getFormSpecifications(formId) {
     };
 
     const data = await ddbDocClient.send(new GetCommand(params));
+    console.log(data);
     return data.Item ? data.Item.specifications : null;
 }
 
