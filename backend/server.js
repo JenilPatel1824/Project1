@@ -155,7 +155,9 @@ async function saveFormDetails(formId, formData) {
     const params = {
         TableName: 'Forms',
         Item: {
+
             formId: formId,
+            owner_id: formData.owner_id,
             formName: formData.formName,
             formType: formData.formType,
             formEndDate: formData.formEndDate
