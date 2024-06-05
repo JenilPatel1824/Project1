@@ -1,38 +1,135 @@
 // server.js
 
 const express = require('express');
-const AWS = require('aws-sdk');
+const bodyParser = require('body-parser');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 require('dotenv').config(); // Load environment variables from .env file
 
 const app = express();
 
+// Use body-parser to parse JSON bodies into JS objects
+app.use(bodyParser.json());
+
 // Configure AWS SDK
-AWS.config.update({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION // Replace with your DynamoDB region, e.g., 'us-east-1'
+const client = new DynamoDBClient({
+    region: process.env.AWS_REGION,
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
 });
 
-// Create DynamoDB service object
-const dynamodb = new AWS.DynamoDB();
+const ddbDocClient = DynamoDBDocumentClient.from(client);
+
+// Secret key for JWT
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key'; // Use a strong secret in production
+
+// Middleware to protect routes
+const authenticateJWT = (req, res, next) => {
+    const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
+
+    if (token) {
+        jwt.verify(token, JWT_SECRET, (err, user) => {
+            if (err) {
+                return res.sendStatus(403);
+            }
+            req.user = user;
+            next();
+        });
+    } else {
+        res.sendStatus(401);
+    }
+};
 
 // Define a route to fetch data from DynamoDB
-app.get('/data', (req, res) => {
+app.get('/data', authenticateJWT, async (req, res) => { // Protect this route with JWT authentication
     const params = {
-        TableName: 'Owners' // Replace with your table name
-        // Add other parameters as needed
+        TableName: 'Owners'
     };
 
-    // Call DynamoDB to retrieve data
-    dynamodb.scan(params, (err, data) => {
-        if (err) {
-            console.error('Unable to retrieve data from DynamoDB', err);
-            res.status(500).send('Internal Server Error');
-        } else {
-            console.log('Data retrieved successfully', data);
-            res.json(data);
+    try {
+        const data = await ddbDocClient.send(new ScanCommand(params));
+        console.log('Data retrieved successfully', data);
+        res.json(data);
+    } catch (err) {
+        console.error('Unable to retrieve data from DynamoDB', err);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// Define a route to handle signup requests
+app.post('/signup', async (req, res) => {
+    const { email, password, business, owner_id } = req.body; // Use body for POST data
+
+    if (!email || !password || !business || !owner_id) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create the parameters for the PutCommand
+    const params = {
+        TableName: 'Owners', // Replace with your table name
+        Item: {
+            'owner_id': owner_id,
+            'email': email,
+            'password': hashedPassword,
+            'business': business
         }
-    });
+    };
+
+    try {
+        await ddbDocClient.send(new PutCommand(params));
+        console.log('Signup successful');
+        res.status(201).json({ message: 'Signup successful!' });
+    } catch (err) {
+        console.error('Error signing up:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Define a route to handle login requests using owner_id and password
+app.post('/login', async (req, res) => {
+    const { owner_id, password } = req.body;
+
+    if (!owner_id || !password) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Fetch the user from DynamoDB
+    const params = {
+        TableName: 'Owners',
+        Key: {
+            'owner_id': owner_id
+        }
+    };
+
+    try {
+        const data = await ddbDocClient.send(new GetCommand(params));
+        if (!data.Item) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const user = data.Item;
+
+        // Compare the hashed password
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Generate a JWT
+        const token = jwt.sign({ owner_id: user.owner_id }, JWT_SECRET, { expiresIn: '1h' });
+
+        res.json({ token });
+    } catch (err) {
+        console.error('Error logging in:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
 });
 
 // Start the server
