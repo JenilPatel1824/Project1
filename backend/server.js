@@ -132,6 +132,57 @@ app.post('/login', async (req, res) => {
     }
 });
 
+
+app.post('/create-form', async (req, res) => {
+    try {
+        // Generate a unique form ID
+        const formId = generateUniqueId();
+
+        // Save form details
+        await saveFormDetails(formId, req.body);
+
+        // Save form specifications
+        await saveFormSpecifications(formId, req.body.specifications);
+
+        res.status(201).send('Form created successfully');
+    } catch (error) {
+        console.error('Error creating form:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+async function saveFormDetails(formId, formData) {
+    const params = {
+        TableName: 'Forms',
+        Item: {
+            formId: formId,
+            formName: formData.formName,
+            formType: formData.formType,
+            formEndDate: formData.formEndDate
+        }
+    };
+
+    await dynamodb.put(params).promise();
+}
+
+async function saveFormSpecifications(formId, formSpecifications) {
+    const params = {
+        TableName: 'FormSpecifications',
+        Item: {
+            formId: formId,
+            specifications: formSpecifications
+        }
+    };
+
+    await dynamodb.put(params).promise();
+}
+function generateUniqueId() {
+    // Implement your logic to generate a unique ID here
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+
+
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
